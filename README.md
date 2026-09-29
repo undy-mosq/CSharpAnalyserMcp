@@ -284,3 +284,5 @@ Passing `0` to `maxXmlChars` / `maxBodyChars` disables truncation for that call.
 - **Cost.** Every query asks each project for its compilation, so response time grows with solution size.
 - **Diagnostics.** Workspace load problems are written to stderr as `[WorkspaceFailed] {Kind}: {Message}`; nothing but JSON-RPC ever reaches stdout.
 - **One solution per process.** The workspace path is fixed at startup; start another instance to analyse another solution.
+
+<!-- mcp-name: io.github.undy-mosq.CSharpAnalyserMcp-->
