@@ -18,7 +18,7 @@ var workspacePath = args
 
 if (string.IsNullOrWhiteSpace(workspacePath))
 {
-    Console.Error.WriteLine("错误：请通过 --workspace 参数指定解决方案路径。");
+    Console.Error.WriteLine("worred：请通过 --workspace 参数指定解决方案路径。");
     Console.Error.WriteLine("示例：CSharpAnalyzerMcp.exe --workspace D:\\MyProject\\MySolution.sln");
     return 1;
 }
