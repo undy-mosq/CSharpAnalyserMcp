@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish, e.g. 1.0.2 (pass a version that already exists to only refresh the MCP Registry entry)'
+        required: true
 
 jobs:
   build-and-publish:
@@ -23,22 +28,40 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Resolve version from the tag
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_ENV"
+      # PKG_VERSION, not VERSION: MSBuild imports environment variables as
+      # properties, so an env var named VERSION would override $(Version), and a
+      # version string that NuGet cannot parse breaks `dotnet restore`.
+      - name: Resolve version
+        run: |
+          RAW="${{ inputs.version }}"
+          [ -n "$RAW" ] || RAW="${GITHUB_REF#refs/tags/v}"
+          if [[ ! "$RAW" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$RAW' is not a valid NuGet version (use e.g. 1.0.2 or 1.0.1-a)."
+            exit 1
+          fi
+          echo "PKG_VERSION=$RAW" >> "$GITHUB_ENV"
+          echo "publishing $NUGET_PACKAGE_ID $RAW"
+
+      # Runs before pack: the same file is embedded in the package and published
+      # to the registry, so both must carry the released version.
+      - name: Sync the version into server.json
+        run: |
+          jq --arg v "$PKG_VERSION" '.version = $v | .packages[0].version = $v' "${{ env.SERVER_JSON_PATH }}" > server.tmp
+          mv server.tmp "${{ env.SERVER_JSON_PATH }}"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Restore dependencies
         run: dotnet restore ${{ env.PROJECT_PATH }}
 
       - name: Build
-        run: dotnet build ${{ env.PROJECT_PATH }} --configuration Release --no-restore -p:Version=${{ env.VERSION }}
+        run: dotnet build ${{ env.PROJECT_PATH }} --configuration Release --no-restore -p:Version=${{ env.PKG_VERSION }}
 
       - name: Pack NuGet package
-        run: dotnet pack ${{ env.PROJECT_PATH }} --configuration Release --no-build --output ./nupkg -p:Version=${{ env.VERSION }}
+        run: dotnet pack ${{ env.PROJECT_PATH }} --configuration Release --no-build --output ./nupkg -p:Version=${{ env.PKG_VERSION }}
 
       - name: NuGet login (OIDC → temp API key)
         uses: NuGet/login@v1
@@ -53,24 +76,23 @@ jobs:
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate
 
-      - name: Wait until the package is visible on NuGet.org
+      # The gallery page flips as soon as the version is listed. The
+      # flat-container blob paths cache their 404s for a long time, so polling
+      # them can keep failing long after a successful publish.
+      - name: Wait until the package is listed on NuGet.org
         run: |
-          ID=$(echo "$NUGET_PACKAGE_ID" | tr '[:upper:]' '[:lower:]')
-          URL="https://api.nuget.org/v3-flatcontainer/$ID/$VERSION/$ID.nuspec"
-          for i in $(seq 1 30); do
-            if curl -fsS "$URL" -o /dev/null; then
-              echo "$NUGET_PACKAGE_ID $VERSION is available on NuGet.org"
+          URL="https://www.nuget.org/packages/$NUGET_PACKAGE_ID/$PKG_VERSION"
+          for i in $(seq 1 40); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' "$URL?cb=$i$RANDOM")
+            if [ "$CODE" = "200" ]; then
+              echo "$NUGET_PACKAGE_ID $PKG_VERSION is listed on NuGet.org"
               exit 0
             fi
-            echo "attempt $i/30: $NUGET_PACKAGE_ID $VERSION is not on NuGet.org yet, waiting 10s"
-            sleep 10
+            echo "attempt $i/40: gallery HTTP $CODE, waiting 15s"
+            sleep 15
           done
-          echo "::error::$NUGET_PACKAGE_ID $VERSION did not appear on NuGet.org in time"
+          echo "::error::$NUGET_PACKAGE_ID $PKG_VERSION is not listed on NuGet.org after 10 minutes"
           exit 1
-
-      - name: Sync the tag version into server.json
-        run: |
-          jq --arg v "$VERSION" '.version = $v | .packages[0].version = $v' ${{ env.SERVER_JSON_PATH }} > server.tmp && mv server.tmp ${{ env.SERVER_JSON_PATH }}
 
       - name: Install mcp-publisher
         run: |
@@ -82,5 +104,15 @@ jobs:
       - name: Validate server.json
         run: ./mcp-publisher validate ${{ env.SERVER_JSON_PATH }}
 
+      # `publish` takes the file as a positional argument (there is no --file
+      # flag) and re-checks the package on NuGet, which can lag behind the push.
       - name: Publish to MCP Registry
-        run: ./mcp-publisher publish ${{ env.SERVER_JSON_PATH }}
+        run: |
+          for i in 1 2 3; do
+            if ./mcp-publisher publish "${{ env.SERVER_JSON_PATH }}"; then
+              exit 0
+            fi
+            echo "publish attempt $i failed; retrying in 60s"
+            sleep 60
+          done
+          exit 1

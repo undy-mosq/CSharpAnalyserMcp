@@ -35,7 +35,11 @@ dnx CSharpAnalyserMcp --yes -- --workspace D:\MyProject\MySolution.sln
 
 ### 从源码构建
 
-见[从源码构建与运行](#从源码构建与运行)。
+```powershell
+git clone https://github.com/undy-mosq/CSharpAnalyserMcp
+dotnet build CSharpAnalyserMcp\CSharpAnalyserMcp.csproj
+dotnet run --project CSharpAnalyserMcp -- --workspace D:\MyProject\MySolution.sln
+```
 
 ## 环境要求
 
@@ -45,31 +49,6 @@ dnx CSharpAnalyserMcp --yes -- --workspace D:\MyProject\MySolution.sln
 | 用 `dnx` 免安装运行 | .NET SDK 10.0 及以上——`dnx` 随 SDK 一起提供 |
 | 从源码构建 / 运行 | .NET SDK 8.0 及以上（项目目标框架为 `net8.0`） |
 | 加载被分析的解决方案 | 能打开该解决方案的 MSBuild 工具链：Visual Studio 2022 或 VS Build Tools（`Microsoft.Build.Locator` 会注册已安装的最新实例）；SDK 风格项目用 .NET SDK 本身即可 |
-| Native AOT 发布（`PublishAot=true` 为默认） | MSVC 链接器，即包含 Windows SDK 的“使用 C++ 的桌面开发”工作负载；请在 Visual Studio **Developer PowerShell / 命令提示符**中发布 |
-
-## 从源码构建与运行
-
-```powershell
-# 构建
-dotnet build CSharpAnalyserMcp\CSharpAnalyserMcp.csproj
-
-# 直接从源码运行（注意 "--" 分隔符：它之后的内容传给服务器）
-dotnet run --project CSharpAnalyserMcp -- --workspace D:\MyProject\MySolution.sln
-```
-
-同一个可执行文件也可以作为普通进程运行，在 stdin/stdout 上收发 JSON-RPC——这正是 MCP 客户端所做的。
-
-### 发布
-
-```powershell
-# Native AOT 单文件可执行程序（需要 MSVC 链接器，请使用 Developer PowerShell）
-dotnet publish CSharpAnalyserMcp\CSharpAnalyserMcp.csproj -c Release -r win-x64
-
-# 没有 C++ 工具链时的替代方案：框架依赖发布
-dotnet publish CSharpAnalyserMcp\CSharpAnalyserMcp.csproj -c Release -r win-x64 -p:PublishAot=false
-```
-
-第二条命令的产物位于 `CSharpAnalyserMcp\bin\Release\net8.0\win-x64\publish\CSharpAnalyserMcp.exe`。
 
 ## 客户端配置
 
@@ -324,28 +303,13 @@ VS Code（`.vscode/mcp.json`）：
 4. 精确读取实现：`get_method { "className": "UserService", "methodName": "GetById", "parameterTypes": ["int"] }`。
 5. 源码变更后，在下一次查询前调用 `reload_solution`，否则查询仍使用旧快照。
 
-## 项目结构
-
-| 路径 | 作用 |
-| --- | --- |
-| `CSharpAnalyserMcp/Program.cs` | 解析 `--workspace`，配置日志 / JSON / MCP，加载工作区并启动 stdio 服务器 |
-| `CSharpAnalyserMcp/Tools/CSharpAnalyzerTools.cs` | 对外暴露的 6 个 MCP 工具 |
-| `CSharpAnalyserMcp/Tools/ServerInstructions.cs` | `initialize` 阶段下发的服务级说明 |
-| `CSharpAnalyserMcp/Services/RoslynWorkspaceService.cs` | `MSBuildWorkspace` 加载 / 刷新与全部 Roslyn 查询 |
-| `CSharpAnalyserMcp/Services/TextTruncator.cs` | 统一的截断阈值与工具方法 |
-| `CSharpAnalyserMcp/Models/` | 结果 DTO（`ClassInfo`、`MethodInfo` 等）与 `AppJsonContext`（AOT 用的源生成 JSON） |
-| `.mcp/server.json` | MCP Registry 清单（传输方式、NuGet 包标识与必需的 `--workspace` 参数），供发布工作流使用 |
-| `.vscode/launch.json`、`.vscode/task.json` | 按 `F5` 调试服务器，附带示例 `--workspace` |
-
 ## 常见问题
 
-- 发布时报 `error : Platform linker not found`：缺少 MSVC 链接器 / Windows SDK。请在 Visual Studio *Developer PowerShell*（含“使用 C++ 的桌面开发”）中发布，或改用 `-p:PublishAot=false` 做框架依赖发布。
-- 重新构建时报 `error MSB3026 / MSB3027 ... apphost.exe ... being used by another process`：MCP 客户端启动的服务器实例仍在运行，锁住了 `bin\Debug\net8.0\CSharpAnalyserMcp.exe`。先停止该客户端 / 实例（或改为输出到其他路径）再构建。
 - 服务器启动即退出，stderr 显示 `Solution file not found`（或其他 MSBuild 错误）：`--workspace` 路径不正确，必须指向解决方案文件而不是文件夹。
 - 客户端的 MCP 日志出现 `The command "dnx" was not found`：`dnx` 自 .NET SDK 10 起才随 SDK 提供。请安装 .NET SDK 10，或改用已安装的工具 / 已发布的可执行程序。
 - `dotnet tool install` 报该包不是 .NET 工具：你指定的版本是在启用 `PackAsTool` 之前打包的，请改为安装当前版本（`dotnet tool list --global` 可查看本机已安装的工具）。
 - 客户端日志出现 `spawn csharp-analyser-mcp ENOENT` 或 `MCP error -32000: Connection closed`：客户端解析不到要执行的命令。请改用绝对路径 `%USERPROFILE%\.dotnet\tools\csharp-analyser-mcp.exe`（`--local` 安装根本不会生成该 shim），并重启客户端。
-- 刚发版后出现 `Cannot find package CSharpAnalyserMcp with version x.y.z`（找不到某版本）：你这条网络拿到的 NuGet 索引仍停留在旧版本列表。先清缓存再试（`dotnet nuget locals http-cache --clear`）；仍不行就用下载好的 `.nupkg` 配 `--add-source <目录>` 安装，或者不安装直接用 `dnx` / `dotnet tool exec`。
+- 刚发版后出现 `Cannot find package CSharpAnalyserMcp with version x.y.z`（找不到某版本）：NuGet 的索引可能落后于发布。稍后重试，或用下载好的 .nupkg 安装：`dotnet tool install -g --add-source <目录> CSharpAnalyserMcp --version x.y.z`。
 
 ## 行为说明与限制
 
@@ -356,3 +320,8 @@ VS Code（`.vscode/mcp.json`）：
 - **开销。** 每次查询都会向每个项目索取编译结果，解决方案越大响应越慢。
 - **诊断信息。** 工作区加载问题以 `[WorkspaceFailed] {Kind}: {Message}` 形式输出到 stderr；除 JSON-RPC 外不会向 stdout 写任何内容。
 - **一个进程一个解决方案。** 工作区路径在启动时固定，分析另一个解决方案需另起一个实例。
+
+---
+
+构建、打包与发版流程（开发者）：[docs/DEVELOPMENT.zh-CN.md](docs/DEVELOPMENT.zh-CN.md)。
+

@@ -22,5 +22,7 @@
     <PackageReference Include="ModelContextProtocol" Version="1.4.1" />
     <PackageReference Include="Microsoft.Build.Locator" Version="1.11.1" />
     <None Include="../README.md" Pack="true" PackagePath="\" />
+    <None Include=".mcp/server.json" Pack="true" PackagePath=".mcp/server.json" />
+
   </ItemGroup>
 </Project>
