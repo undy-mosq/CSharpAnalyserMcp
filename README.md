@@ -9,16 +9,43 @@ The server loads a solution with `MSBuildWorkspace` into a cached Roslyn snapsho
 - Transport: stdio (`StdioServerTransport`), protocol traffic on stdout only; all logs go to stderr.
 - Solution path is passed on the command line (`--workspace <path to .sln>`); the solution is loaded **before** the MCP handshake, so a bad path fails fast with a message on stderr and a non-zero exit code.
 - Tools declare structured output (`UseStructuredContent`), so results arrive as MCP `structuredContent` with camelCase JSON fields.
+- Distribution: published to NuGet as the .NET tool **CSharpAnalyserMcp** (command `csharp-analyser-mcp`) and listed in the official [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.undy-mosq/CSharpAnalyserMcp`.
+
+## Installation
+
+### NuGet .NET tool (recommended)
+
+```powershell
+dotnet tool install --global CSharpAnalyserMcp
+csharp-analyser-mcp --workspace D:\MyProject\MySolution.sln
+
+# upgrade / remove
+dotnet tool update --global CSharpAnalyserMcp
+dotnet tool uninstall --global CSharpAnalyserMcp
+```
+
+### On demand with `dnx` (nothing to install, .NET SDK 10+)
+
+```powershell
+# "--" separates dnx options from the arguments forwarded to the server
+dnx CSharpAnalyserMcp --yes -- --workspace D:\MyProject\MySolution.sln
+```
+
+### From source
+
+See [Build and run from source](#build-and-run-from-source).
 
 ## Requirements
 
 | Purpose | Requirement |
 | --- | --- |
+| Run the published tool (`dotnet tool install --global`) | .NET SDK 8.0 or newer on `PATH` (the package targets `net8.0`) |
+| Run it on demand with `dnx` | .NET SDK 10.0 or newer — `dnx` ships with the SDK |
 | Build / run from source | .NET SDK 8.0 or newer (the project targets `net8.0`) |
 | Load the analyzed solution | An MSBuild toolchain that can open it — Visual Studio 2022 or VS Build Tools (`Microsoft.Build.Locator` registers the newest installed instance), or the .NET SDK itself for SDK-style projects |
 | Native AOT publish (default `PublishAot=true`) | The MSVC linker, i.e. the *Desktop development with C++* workload including the Windows SDK; publish from a Visual Studio **Developer PowerShell / Command Prompt** |
 
-## Build and run
+## Build and run from source
 
 ```powershell
 # build
@@ -46,18 +73,52 @@ The second command writes `CSharpAnalyserMcp\bin\Release\net8.0\win-x64\publish\
 
 The server is started with a single argument, `--workspace`, pointing at the solution file.
 
+### Installed .NET tool
+
 Claude Desktop (`claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "csharp-analyser": {
-      "command": "C:\\Tools\\csharp-analyser\\CSharpAnalyserMcp.exe",
+      "command": "csharp-analyser-mcp",
       "args": ["--workspace", "D:\\MyProject\\MySolution.sln"]
     }
   }
 }
 ```
+
+VS Code (`.vscode/mcp.json`):
+
+```json
+{
+  "servers": {
+    "csharp-analyser": {
+      "type": "stdio",
+      "command": "csharp-analyser-mcp",
+      "args": ["--workspace", "D:\\MyProject\\MySolution.sln"]
+    }
+  }
+}
+```
+
+### On demand with `dnx` (nothing installed)
+
+```json
+{
+  "servers": {
+    "csharp-analyser": {
+      "type": "stdio",
+      "command": "dnx",
+      "args": ["CSharpAnalyserMcp", "--yes", "--", "--workspace", "D:\\MyProject\\MySolution.sln"]
+    }
+  }
+}
+```
+
+Append `@<version>` to the package id to pin a version. The **MCP Server** tab of the [NuGet package page](https://www.nuget.org/packages/CSharpAnalyserMcp) offers the same JSON for copying.
+
+### Published executable
 
 VS Code (`.vscode/mcp.json`):
 
@@ -73,7 +134,7 @@ VS Code (`.vscode/mcp.json`):
 }
 ```
 
-Running the project directly instead of a published executable:
+### Running the project from source
 
 ```json
 {
@@ -84,7 +145,7 @@ Running the project directly instead of a published executable:
       "args": [
         "run",
         "--project",
-        "D:\\13056\\classDatabase\\CSharpAnalyserMcp\\CSharpAnalyserMcp\\CSharpAnalyserMcp.csproj",
+        "D:\\MyProject\\CSharpAnalyserMcp\\CSharpAnalyserMcp\\CSharpAnalyserMcp.csproj",
         "--",
         "--workspace",
         "D:\\MyProject\\MySolution.sln"
@@ -267,6 +328,7 @@ Passing `0` to `maxXmlChars` / `maxBodyChars` disables truncation for that call.
 | `CSharpAnalyserMcp/Services/RoslynWorkspaceService.cs` | `MSBuildWorkspace` load / reload and all Roslyn queries |
 | `CSharpAnalyserMcp/Services/TextTruncator.cs` | Central truncation limits and helper |
 | `CSharpAnalyserMcp/Models/` | Result DTOs (`ClassInfo`, `MethodInfo`, …) plus `AppJsonContext` (source-generated JSON for AOT) |
+| `.mcp/server.json` | MCP Registry manifest (transport, NuGet package id and the required `--workspace` argument) consumed by the release workflow |
 | `.vscode/launch.json`, `.vscode/task.json` | `F5` debugging of the server with a sample `--workspace` |
 
 ## Troubleshooting
@@ -274,6 +336,8 @@ Passing `0` to `maxXmlChars` / `maxBodyChars` disables truncation for that call.
 - `error : Platform linker not found` while publishing → the MSVC linker / Windows SDK is missing. Run the publish from a Visual Studio *Developer PowerShell* (Desktop development with C++), or fall back to `-p:PublishAot=false`.
 - `error MSB3026 / MSB3027 ... apphost.exe ... being used by another process` while rebuilding → a server instance started by an MCP client is still running and locks `bin\Debug\net8.0\CSharpAnalyserMcp.exe`. Stop that client/instance (or build to another output path) and rebuild.
 - The server exits immediately with `Solution file not found` (or another MSBuild error) on stderr → the `--workspace` path is wrong; it must point at the solution file, not at a folder.
+- `The command "dnx" was not found` in the client's MCP log → `dnx` ships with the .NET SDK 10 and newer. Install .NET SDK 10, or use an installed tool or the published executable instead.
+- `dotnet tool install` reports that the package is not a .NET tool → the version you asked for was packed before `PackAsTool` was enabled; install the current version instead (`dotnet tool list --global` shows what is installed).
 
 ## Behavior notes and limitations
 
@@ -285,4 +349,4 @@ Passing `0` to `maxXmlChars` / `maxBodyChars` disables truncation for that call.
 - **Diagnostics.** Workspace load problems are written to stderr as `[WorkspaceFailed] {Kind}: {Message}`; nothing but JSON-RPC ever reaches stdout.
 - **One solution per process.** The workspace path is fixed at startup; start another instance to analyse another solution.
 
-<!-- mcp-name: io.github.undy-mosq.CSharpAnalyserMcp-->
+<!-- mcp-name: io.github.undy-mosq/CSharpAnalyserMcp -->

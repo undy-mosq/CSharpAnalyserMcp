@@ -1,0 +1,33 @@
+{
+    "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+    "name": "io.github.undy-mosq/CSharpAnalyserMcp",
+    "version": "1.0.0",
+    "description": "A read-only MCP server that lets an AI assistant browse any C# solution through Roslyn: type declarations, XML documentation and method bodies.",
+    "title": "C# Class Analyzer MCP",
+    "websiteUrl": "https://github.com/undy-mosq/CSharpAnalyserMcp",
+    "packages": [
+      {
+        "registryType": "nuget",
+        "registryBaseUrl": "https://api.nuget.org/v3/index.json",
+        "identifier": "CSharpAnalyserMcp",
+        "version": "1.0.0",
+        "runtimeHint": "dnx",
+        "transport": {
+          "type": "stdio"
+        },
+        "packageArguments": [
+          {
+            "type": "named",
+            "name": "--workspace",
+            "description": "Absolute path of the .sln file to analyse. Required: the solution is loaded before the MCP handshake, so an invalid path exits with a non-zero code.",
+            "format": "filepath",
+            "isRequired": true
+          }
+        ]
+      }
+    ],
+    "repository": {
+      "url": "https://github.com/undy-mosq/CSharpAnalyserMcp",
+      "source": "github"
+    }
+  }

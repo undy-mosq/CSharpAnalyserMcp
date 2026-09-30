@@ -10,6 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     environment: nuget
 
+    env:
+      PROJECT_PATH: CSharpAnalyserMcp/CSharpAnalyserMcp.csproj
+      SERVER_JSON_PATH: CSharpAnalyserMcp/.mcp/server.json
+      NUGET_PACKAGE_ID: CSharpAnalyserMcp
+
     permissions:
       id-token: write
       contents: read
@@ -18,19 +23,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Resolve version from the tag
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_ENV"
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
       - name: Restore dependencies
-        run: dotnet restore ./CSharpAnalyserMcp/CSharpAnalyserMcp.csproj
+        run: dotnet restore ${{ env.PROJECT_PATH }}
 
       - name: Build
-        run: dotnet build ./CSharpAnalyserMcp/CSharpAnalyserMcp.csproj --configuration Release --no-restore
+        run: dotnet build ${{ env.PROJECT_PATH }} --configuration Release --no-restore -p:Version=${{ env.VERSION }}
 
       - name: Pack NuGet package
-        run: dotnet pack ./CSharpAnalyserMcp/CSharpAnalyserMcp.csproj --configuration Release --no-build --output ./nupkg
+        run: dotnet pack ${{ env.PROJECT_PATH }} --configuration Release --no-build --output ./nupkg -p:Version=${{ env.VERSION }}
 
       - name: NuGet login (OIDC → temp API key)
         uses: NuGet/login@v1
@@ -44,3 +52,32 @@ jobs:
             --api-key ${{ steps.login.outputs.NUGET_API_KEY }} \
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate
+
+      - name: Wait until the package is visible on NuGet.org
+        run: |
+          ID=$(echo "$NUGET_PACKAGE_ID" | tr '[:upper:]' '[:lower:]')
+          URL="https://api.nuget.org/v3-flatcontainer/$ID/$VERSION/$ID.nuspec"
+          for i in $(seq 1 30); do
+            if curl -fsS "$URL" -o /dev/null; then
+              echo "$NUGET_PACKAGE_ID $VERSION is available on NuGet.org"
+              exit 0
+            fi
+            echo "attempt $i/30: $NUGET_PACKAGE_ID $VERSION is not on NuGet.org yet, waiting 10s"
+            sleep 10
+          done
+          echo "::error::$NUGET_PACKAGE_ID $VERSION did not appear on NuGet.org in time"
+          exit 1
+
+      - name: Sync the tag version into server.json
+        run: |
+          jq --arg v "$VERSION" '.version = $v | .packages[0].version = $v' ${{ env.SERVER_JSON_PATH }} > server.tmp && mv server.tmp ${{ env.SERVER_JSON_PATH }}
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate to MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to MCP Registry
+        run: ./mcp-publisher publish --file=${{ env.SERVER_JSON_PATH }}
