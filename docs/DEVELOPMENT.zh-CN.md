@@ -36,7 +36,8 @@ dotnet pack CSharpAnalyserMcp\CSharpAnalyserMcp.csproj -c Release -p:Version=1.0
 打包验证要点（解包 `nupkg\CSharpAnalyserMcp.<版本>.nupkg`）：
 - `<packageTypes>` 同时含 `DotnetTool` 与 `McpServer`；
 - 有 `tools/net8.0/any/DotnetToolSettings.xml`，其中命令名为 `csharp-analyser-mcp`；
-- 有 **`.mcp/server.json`**（NuGet 的“MCP Server”标签页靠它生成 VS Code 一键配置）。
+- 有 **`.mcp/server.json`**（NuGet 的“MCP Server”标签页靠它生成 VS Code 一键配置）；
+- nuspec 里有 `<license type="expression">MIT</license>`（用 `<PackageLicenseExpression>` 声明，不需要把 LICENSE 文件打进包；缺失时 NuGet 推送会警告 `License missing`）。
 
 ## 3. 项目结构
 
@@ -77,6 +78,18 @@ dotnet pack CSharpAnalyserMcp\CSharpAnalyserMcp.csproj -c Release -p:Version=1.0
 **与 registry 相关的两个约定**
 - 包内嵌 `.mcp/server.json`：NuGet 包页的 “MCP Server” 标签页靠它生成 VS Code 配置；缺了会显示 *The VS Code MCP server configuration entry cannot be generated because this package does not include a server.json file.*
 - README 末尾的 `<!-- mcp-name: io.github.undy-mosq/CSharpAnalyserMcp -->`：MCP Registry 用它校验 NuGet 包归属，**必须与 registry 清单里的 `name` 完全一致**；这个 README 就是被打进 nupkg 的那份（`PackageReadmeFile`）。
+- registry 对清单有长度限制：**`description` ≤ 100 字符**、`title` ≤ 100 字符。超长时 `mcp-publisher validate` 会返回 `422 ... "expected length <= 100","location":"body.description"`。本地预检：
+  ```powershell
+  # 下载官方 publisher（Windows 版）到临时目录
+  curl.exe -L -o "$env:TEMP\mcp-publisher.tar.gz" https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_windows_amd64.tar.gz
+  tar -xzf "$env:TEMP\mcp-publisher.tar.gz" -C "$env:TEMP"
+  & "$env:TEMP\mcp-publisher.exe" validate CSharpAnalyserMcp/.mcp/server.json
+  ```
+  （`validate` 只调用 registry 的公开校验接口，不改任何状态，也不需要登录。）
+  不想下载二进制时，可以直接打这个接口（等价，实测返回 `{"valid":true,"issues":[]}`）：
+  ```powershell
+  curl.exe -s -X POST -H "Content-Type: application/json" --data-binary "@CSharpAnalyserMcp/.mcp/server.json" https://registry.modelcontextprotocol.io/v0/validate
+  ```
 
 **mcp-publisher 备忘**
 - `publish [server.json]` 是**位置参数**：它没有 `--file`，写 `--file=...` 会被当成未知参数忽略，然后去找 `./server.json` 并报 `server.json not found`；
@@ -125,7 +138,7 @@ flat-container 的 blob 路径（`.../{id}/{version}/{id}.nuspec`）一旦在包
 
 ## 6. 发布前检查清单
 
-1. `dotnet pack -p:Version=<版本>` → 解包确认包类型（`DotnetTool` + `McpServer`）、工具命令名、以及 `.mcp/server.json` 都在；
+1. `dotnet pack -p:Version=<版本>` → 解包确认包类型（`DotnetTool` + `McpServer`）、工具命令名、`.mcp/server.json`、以及 nuspec 里的 `<license type="expression">MIT</license>` 都在；
 2. 工具形态实测：`dotnet tool install -g --add-source .\nupkg CSharpAnalyserMcp --version <版本>`，再 `csharp-analyser-mcp --workspace <不存在的路径>` 应快速失败并给非零退出码；
 3. MCP 握手实测：向进程 stdin 依次写 `initialize`、`notifications/initialized`、`tools/list`，确认 stdout 上是合法 JSON-RPC（stderr 只放日志）；
 4. `mcp-publisher validate CSharpAnalyserMcp/.mcp/server.json` 通过；

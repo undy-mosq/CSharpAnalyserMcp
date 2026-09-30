@@ -321,6 +321,10 @@ VS Code（`.vscode/mcp.json`）：
 - **诊断信息。** 工作区加载问题以 `[WorkspaceFailed] {Kind}: {Message}` 形式输出到 stderr；除 JSON-RPC 外不会向 stdout 写任何内容。
 - **一个进程一个解决方案。** 工作区路径在启动时固定，分析另一个解决方案需另起一个实例。
 
+## 许可证
+
+MIT，见 [LICENSE](LICENSE)。
+
 ---
 
 构建、打包与发版流程（开发者）：[docs/DEVELOPMENT.zh-CN.md](docs/DEVELOPMENT.zh-CN.md)。

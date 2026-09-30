@@ -321,6 +321,10 @@ Passing `0` to `maxXmlChars` / `maxBodyChars` disables truncation for that call.
 - **Diagnostics.** Workspace load problems are written to stderr as `[WorkspaceFailed] {Kind}: {Message}`; nothing but JSON-RPC ever reaches stdout.
 - **One solution per process.** The workspace path is fixed at startup; start another instance to analyse another solution.
 
+## License
+
+MIT — see [LICENSE](LICENSE).
+
 ---
 
 Building, publishing and the release process: [docs/DEVELOPMENT.zh-CN.md](docs/DEVELOPMENT.zh-CN.md) (中文).
