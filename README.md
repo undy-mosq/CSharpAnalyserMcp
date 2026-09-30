@@ -24,6 +24,8 @@ dotnet tool update --global CSharpAnalyserMcp
 dotnet tool uninstall --global CSharpAnalyserMcp
 ```
 
+Install it **globally**: a `--local` install only writes a manifest entry, so `csharp-analyser-mcp` never lands on `PATH` and MCP clients cannot start it.
+
 ### On demand with `dnx` (nothing to install, .NET SDK 10+)
 
 ```powershell
@@ -75,13 +77,15 @@ The server is started with a single argument, `--workspace`, pointing at the sol
 
 ### Installed .NET tool
 
+The global tool shim lives in `%USERPROFILE%\.dotnet\tools`. MCP clients spawn the process themselves and only see the `PATH` they inherited, so point the configuration at the shim **by absolute path** (expand `%USERPROFILE%`, e.g. `C:\Users\you\.dotnet\tools\csharp-analyser-mcp.exe`):
+
 Claude Desktop (`claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "csharp-analyser": {
-      "command": "csharp-analyser-mcp",
+      "command": "C:\\Users\\you\\.dotnet\\tools\\csharp-analyser-mcp.exe",
       "args": ["--workspace", "D:\\MyProject\\MySolution.sln"]
     }
   }
@@ -95,12 +99,14 @@ VS Code (`.vscode/mcp.json`):
   "servers": {
     "csharp-analyser": {
       "type": "stdio",
-      "command": "csharp-analyser-mcp",
+      "command": "C:\\Users\\you\\.dotnet\\tools\\csharp-analyser-mcp.exe",
       "args": ["--workspace", "D:\\MyProject\\MySolution.sln"]
     }
   }
 }
 ```
+
+The bare command name (`"command": "csharp-analyser-mcp"`) works only when that directory is already on the client's `PATH`; a client started before the tool was installed keeps the old environment, so restart it after changing `PATH`.
 
 ### On demand with `dnx` (nothing installed)
 
@@ -116,7 +122,7 @@ VS Code (`.vscode/mcp.json`):
 }
 ```
 
-Append `@<version>` to the package id to pin a version. The **MCP Server** tab of the [NuGet package page](https://www.nuget.org/packages/CSharpAnalyserMcp) offers the same JSON for copying.
+Append `@<version>` to the package id to pin a version. The **MCP Server** tab of the [NuGet package page](https://www.nuget.org/packages/CSharpAnalyserMcp) offers the same JSON for copying. `dnx` is a `.cmd` shim; if the client cannot spawn it, use the equivalent `dotnet` form instead: `"command": "dotnet"` with `"args": ["tool", "exec", "CSharpAnalyserMcp", "--yes", "--", "--workspace", "D:\\MyProject\\MySolution.sln"]`.
 
 ### Published executable
 
@@ -338,6 +344,8 @@ Passing `0` to `maxXmlChars` / `maxBodyChars` disables truncation for that call.
 - The server exits immediately with `Solution file not found` (or another MSBuild error) on stderr → the `--workspace` path is wrong; it must point at the solution file, not at a folder.
 - `The command "dnx" was not found` in the client's MCP log → `dnx` ships with the .NET SDK 10 and newer. Install .NET SDK 10, or use an installed tool or the published executable instead.
 - `dotnet tool install` reports that the package is not a .NET tool → the version you asked for was packed before `PackAsTool` was enabled; install the current version instead (`dotnet tool list --global` shows what is installed).
+- `spawn csharp-analyser-mcp ENOENT` or `MCP error -32000: Connection closed` in the client log → the client could not resolve the command it was told to run. Use the absolute path to `%USERPROFILE%\.dotnet\tools\csharp-analyser-mcp.exe` (a `--local` install has no shim there at all) and restart the client.
+- `Cannot find package CSharpAnalyserMcp with version x.y.z` right after a release → the NuGet index your network reaches still lists the previous versions. Clear the client cache (`dotnet nuget locals http-cache --clear`) and retry; if it keeps failing, install from a downloaded `.nupkg` with `--add-source <folder>`, or skip installing and use `dnx` / `dotnet tool exec`.
 
 ## Behavior notes and limitations
 

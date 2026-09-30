@@ -79,5 +79,8 @@ jobs:
       - name: Authenticate to MCP Registry
         run: ./mcp-publisher login github-oidc
 
+      - name: Validate server.json
+        run: ./mcp-publisher validate ${{ env.SERVER_JSON_PATH }}
+
       - name: Publish to MCP Registry
-        run: ./mcp-publisher publish --file=${{ env.SERVER_JSON_PATH }}
+        run: ./mcp-publisher publish ${{ env.SERVER_JSON_PATH }}

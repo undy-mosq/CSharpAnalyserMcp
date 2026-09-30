@@ -24,6 +24,8 @@ dotnet tool update --global CSharpAnalyserMcp
 dotnet tool uninstall --global CSharpAnalyserMcp
 ```
 
+请**全局安装**：`--local` 安装只在清单里加一条记录，`csharp-analyser-mcp` 不会出现在 `PATH` 上，MCP 客户端无法启动它。
+
 ### 用 `dnx` 免安装运行（.NET SDK 10 及以上）
 
 ```powershell
@@ -75,13 +77,15 @@ dotnet publish CSharpAnalyserMcp\CSharpAnalyserMcp.csproj -c Release -r win-x64 
 
 ### 已安装的 .NET 工具
 
+全局工具的 shim 位于 `%USERPROFILE%\.dotnet\tools`。MCP 客户端是自己直接拉起进程的，只能看到它继承到的 `PATH`，因此配置里请**用绝对路径**指向该 shim（把 `%USERPROFILE%` 展开，例如 `C:\Users\you\.dotnet\tools\csharp-analyser-mcp.exe`）：
+
 Claude Desktop（`claude_desktop_config.json`）：
 
 ```json
 {
   "mcpServers": {
     "csharp-analyser": {
-      "command": "csharp-analyser-mcp",
+      "command": "C:\\Users\\you\\.dotnet\\tools\\csharp-analyser-mcp.exe",
       "args": ["--workspace", "D:\\MyProject\\MySolution.sln"]
     }
   }
@@ -95,12 +99,14 @@ VS Code（`.vscode/mcp.json`）：
   "servers": {
     "csharp-analyser": {
       "type": "stdio",
-      "command": "csharp-analyser-mcp",
+      "command": "C:\\Users\\you\\.dotnet\\tools\\csharp-analyser-mcp.exe",
       "args": ["--workspace", "D:\\MyProject\\MySolution.sln"]
     }
   }
 }
 ```
+
+裸命令名（`"command": "csharp-analyser-mcp"`）只在客户端继承到的 `PATH` 已包含该目录时可用；如果客户端是在安装工具之前启动的，它仍是旧环境，改完 `PATH` 后请重启客户端。
 
 ### 用 `dnx` 免安装运行
 
@@ -116,7 +122,7 @@ VS Code（`.vscode/mcp.json`）：
 }
 ```
 
-在包标识符后追加 `@<版本>` 即可固定版本。[NuGet 包页](https://www.nuget.org/packages/CSharpAnalyserMcp)的 **MCP Server** 标签页提供了相同的 JSON 便于复制。
+在包标识符后追加 `@<版本>` 即可固定版本。[NuGet 包页](https://www.nuget.org/packages/CSharpAnalyserMcp)的 **MCP Server** 标签页提供了相同的 JSON 便于复制。`dnx` 是 `.cmd` 批处理 shim，若客户端无法 spawn 它，可改用等价的 `dotnet` 写法：`"command": "dotnet"` + `"args": ["tool", "exec", "CSharpAnalyserMcp", "--yes", "--", "--workspace", "D:\\MyProject\\MySolution.sln"]`。
 
 ### 已发布的独立可执行程序
 
@@ -338,6 +344,8 @@ VS Code（`.vscode/mcp.json`）：
 - 服务器启动即退出，stderr 显示 `Solution file not found`（或其他 MSBuild 错误）：`--workspace` 路径不正确，必须指向解决方案文件而不是文件夹。
 - 客户端的 MCP 日志出现 `The command "dnx" was not found`：`dnx` 自 .NET SDK 10 起才随 SDK 提供。请安装 .NET SDK 10，或改用已安装的工具 / 已发布的可执行程序。
 - `dotnet tool install` 报该包不是 .NET 工具：你指定的版本是在启用 `PackAsTool` 之前打包的，请改为安装当前版本（`dotnet tool list --global` 可查看本机已安装的工具）。
+- 客户端日志出现 `spawn csharp-analyser-mcp ENOENT` 或 `MCP error -32000: Connection closed`：客户端解析不到要执行的命令。请改用绝对路径 `%USERPROFILE%\.dotnet\tools\csharp-analyser-mcp.exe`（`--local` 安装根本不会生成该 shim），并重启客户端。
+- 刚发版后出现 `Cannot find package CSharpAnalyserMcp with version x.y.z`（找不到某版本）：你这条网络拿到的 NuGet 索引仍停留在旧版本列表。先清缓存再试（`dotnet nuget locals http-cache --clear`）；仍不行就用下载好的 `.nupkg` 配 `--add-source <目录>` 安装，或者不安装直接用 `dnx` / `dotnet tool exec`。
 
 ## 行为说明与限制
 
